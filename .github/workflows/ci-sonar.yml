@@ -1,0 +1,81 @@
+name: CI Pipeline with SonarQube
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  build-test-sonar:
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build (optional)
+        run: npm run build 2>/dev/null || echo "No build step found"
+
+      - name: Run tests with coverage
+        env:
+          JEST_JUNIT_OUTPUT: coverage/junit.xml
+        run: npm run test:ci
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Jest Test Results
+          path: coverage/junit.xml
+          reporter: jest-junit
+          fail-on-error: true
+
+      - name: Upload test results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-node
+          path: coverage/
+          retention-days: 30
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6.0.0
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=sample-node-app
+            -Dsonar.sources=.
+            -Dsonar.exclusions=node_modules/**,coverage/**,tests/**,**/*.test.js,**/*.spec.js
+            -Dsonar.tests=tests/
+            -Dsonar.test.inclusions=**/*.test.js,**/*.spec.js
+
+      - name: Package deployment artifact
+        run: |
+          mkdir -p deployment-package
+          cp -r server.js package.json package-lock.json public node_modules Dockerfile deployment-package/ 2>/dev/null || true
+          zip -r deployment-package.zip deployment-package
+        shell: bash
+
+      - name: Upload deployment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package-node-${{ github.run_number }}
+          path: deployment-package.zip
+          retention-days: 90
