@@ -25,6 +25,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Ensure coverage folder exists
+          run: mkdir -p coverage
+
       - name: Install dependencies
         run: npm ci
 
